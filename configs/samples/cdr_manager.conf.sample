@@ -3,6 +3,7 @@
 ;
 [general]
 enabled = no
+;buffersize = 1024	; Custom fields buffer size, default is 1024
 
 ; The "mappings" category can be used to define additional "key: value" pairs
 ; that will be included in the manager event. (after AccountCode, Source, etc).

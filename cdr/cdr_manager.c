@@ -180,11 +180,11 @@ ASTERISK_REGISTER_FILE()
 
 #define DATE_FORMAT 	"%Y-%m-%d %T"
 #define CONF_FILE	"cdr_manager.conf"
-#define CUSTOM_FIELDS_BUF_SIZE 1024
 
 static const char name[] = "cdr_manager";
 
 static int enablecdr = 0;
+static int customfields_bufsize = 1024;
 
 static struct ast_str *customfields;
 AST_RWLOCK_DEFINE_STATIC(customfields_lock);
@@ -193,11 +193,11 @@ static int manager_log(struct ast_cdr *cdr);
 
 static int load_config(int reload)
 {
-	char *cat = NULL;
 	struct ast_config *cfg;
 	struct ast_variable *v;
 	struct ast_flags config_flags = { reload ? CONFIG_FLAG_FILEUNCHANGED : 0 };
 	int newenablecdr = 0;
+	int newcustomfields_bufsize = 1024;
 
 	cfg = ast_config_load(CONF_FILE, config_flags);
 	if (cfg == CONFIG_STATUS_FILEUNCHANGED) {
@@ -228,30 +228,24 @@ static int load_config(int reload)
 		customfields = NULL;
 	}
 
-	while ( (cat = ast_category_browse(cfg, cat)) ) {
-		if (!strcasecmp(cat, "general")) {
-			v = ast_variable_browse(cfg, cat);
-			while (v) {
-				if (!strcasecmp(v->name, "enabled"))
-					newenablecdr = ast_true(v->value);
+	for (v = ast_variable_browse(cfg, "general"); v; v = v->next) {
+		if (!strcasecmp(v->name, "enabled"))
+			newenablecdr = ast_true(v->value);
+		if (!strcasecmp(v->name, "buffersize")) {
+			ast_parse_arg(v->value, PARSE_UINT32, &newcustomfields_bufsize);
+		}
+	}
+	customfields_bufsize = newcustomfields_bufsize;
 
-				v = v->next;
-			}
-		} else if (!strcasecmp(cat, "mappings")) {
-			customfields = ast_str_create(CUSTOM_FIELDS_BUF_SIZE);
-			v = ast_variable_browse(cfg, cat);
-			while (v) {
-				if (customfields && !ast_strlen_zero(v->name) && !ast_strlen_zero(v->value)) {
-					if ((ast_str_strlen(customfields) + strlen(v->value) + strlen(v->name) + 14) < ast_str_size(customfields)) {
-						ast_str_append(&customfields, -1, "%s: ${CDR(%s)}\r\n", v->value, v->name);
-						ast_log(LOG_NOTICE, "Added mapping %s: ${CDR(%s)}\n", v->value, v->name);
-					} else {
-						ast_log(LOG_WARNING, "No more buffer space to add other custom fields\n");
-						break;
-					}
-
-				}
-				v = v->next;
+	customfields = ast_str_create(customfields_bufsize);
+	for (v = ast_variable_browse(cfg, "mappings"); v; v = v->next) {
+		if (customfields && !ast_strlen_zero(v->name) && !ast_strlen_zero(v->value)) {
+			if ((ast_str_strlen(customfields) + strlen(v->value) + strlen(v->name) + 14) < ast_str_size(customfields)) {
+				ast_str_append(&customfields, -1, "%s: ${CDR(%s)}\r\n", v->value, v->name);
+				ast_log(LOG_NOTICE, "Added mapping %s: ${CDR(%s)}\n", v->value, v->name);
+			} else {
+				ast_log(LOG_WARNING, "No more buffer space to add other custom fields (buffersize: %d)\n", customfields_bufsize);
+				break;
 			}
 		}
 	}
@@ -278,7 +272,7 @@ static int manager_log(struct ast_cdr *cdr)
 	char strStartTime[80] = "";
 	char strAnswerTime[80] = "";
 	char strEndTime[80] = "";
-	char buf[CUSTOM_FIELDS_BUF_SIZE];
+	char buf[customfields_bufsize];
 
 	if (!enablecdr)
 		return 0;
