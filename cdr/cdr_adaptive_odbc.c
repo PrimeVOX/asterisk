@@ -95,11 +95,12 @@ static int load_config(void)
 	struct ast_config *cfg;
 	struct ast_variable *var;
 	const char *tmp, *catg;
+	char *saveptr, *contoken;
 	struct tables *tableptr;
 	struct columns *entry;
 	struct odbc_obj *obj;
 	char columnname[80];
-	char connection[40];
+	char connection[256], tmpcon[256];
 	char table[40];
 	char schema[40];
 	char quoted_identifiers;
@@ -132,7 +133,14 @@ static int load_config(void)
 		}
 
 		/* When loading, we want to be sure we can connect. */
-		obj = ast_odbc_request_obj(connection, 1);
+		obj = NULL;
+		ast_copy_string(tmpcon, connection, sizeof(connection));
+		saveptr = tmpcon;
+		while ((contoken = strtok_r(saveptr, ",", &saveptr))) {
+			obj = ast_odbc_request_obj(contoken, 1);
+			if (obj)
+				break;
+		}
 		if (!obj) {
 			ast_log(LOG_WARNING, "No such connection '%s' in the '%s' section of " CONFIG ".  Check res_odbc.conf.\n", connection, catg);
 			continue;
@@ -383,7 +391,7 @@ static int odbc_log(struct ast_cdr *cdr)
 	struct columns *entry;
 	struct odbc_obj *obj;
 	struct ast_str *sql = ast_str_create(maxsize), *sql2 = ast_str_create(maxsize2);
-	char *tmp;
+	char *tmp, *saveptr, *contoken;
 	char colbuf[1024], *colptr;
 	SQLHSTMT stmt = NULL;
 	SQLLEN rows = 0;
@@ -432,7 +440,18 @@ static int odbc_log(struct ast_cdr *cdr)
 		ast_str_set(&sql2, 0, " VALUES (");
 
 		/* No need to check the connection now; we'll handle any failure in prepare_and_execute */
-		if (!(obj = ast_odbc_request_obj(tableptr->connection, 0))) {
+		obj = NULL;
+		char tmpcon[strlen(tableptr->connection)+1];
+		ast_copy_string(tmpcon, tableptr->connection, strlen(tableptr->connection)+1);
+ast_log(LOG_WARNING, "_%s\n", tmpcon);
+		saveptr = tmpcon;
+		while ((contoken = strtok_r(saveptr, ",", &saveptr))) {
+ast_log(LOG_WARNING, "__%s\n", contoken);
+			obj = ast_odbc_request_obj(contoken, 0);
+			if (obj)
+				break;
+		}
+		if (!obj) {
 			ast_log(LOG_WARNING, "cdr_adaptive_odbc: Unable to retrieve database handle for '%s:%s'.  CDR failed: %s\n", tableptr->connection, tableptr->table, ast_str_buffer(sql));
 			continue;
 		}
